@@ -1,5 +1,5 @@
 [package]
-name = "jwt-auth-axum-rust"
+name = "rust-axum-auth"
 version = "0.1.0"
 edition = "2021"
 

@@ -7,11 +7,9 @@ mod route;
 
 use config::Config;
 use std::sync::Arc;
-
-use axum::http::{
-    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
-    HeaderValue, Method,
-};
+use std::time::Duration;
+use axum::http::{header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE}, HeaderName, HeaderValue, Method};
+use axum::http::header::{ACCESS_CONTROL_ALLOW_CREDENTIALS, COOKIE, SET_COOKIE};
 use dotenv::dotenv;
 use route::create_router;
 use tower_http::cors::CorsLayer;
@@ -46,15 +44,23 @@ async fn main() {
 
     let cors = CorsLayer::new()
         .allow_origin("http://localhost:3000".parse::<HeaderValue>().unwrap())
-        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
         .allow_credentials(true)
-        .allow_headers([AUTHORIZATION, ACCEPT, CONTENT_TYPE]);
+        .allow_headers([
+            AUTHORIZATION,
+            ACCEPT,
+            CONTENT_TYPE,
+            COOKIE,
+            ACCESS_CONTROL_ALLOW_CREDENTIALS,
+        ])
+        .expose_headers([SET_COOKIE])
+        .max_age(Duration::from_secs(60 * 60));
 
     let app = create_router(Arc::new(AppState {
         db: pool.clone(),
         env: config.clone(),
     }))
-    .layer(cors);
+        .layer(cors);
 
     println!("🚀 Server started successfully");
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();

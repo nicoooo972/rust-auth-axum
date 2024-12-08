@@ -75,22 +75,68 @@ pub async fn register_user_handler(
         body.email.to_string().to_ascii_lowercase(),
         hashed_password
     )
-    .fetch_one(&data.db)
-    .await
-    .map_err(|e| {
-        let error_response = serde_json::json!({
+        .fetch_one(&data.db)
+        .await
+        .map_err(|e| {
+            let error_response = serde_json::json!({
             "status": "fail",
             "message": format!("Database error: {}", e),
         });
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
-    })?;
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response))
+        })?;
 
-    let user_response = serde_json::json!({"status": "success","data": serde_json::json!({
-        "user": filter_user_record(&user)
-    })});
+    let now = chrono::Utc::now();
+    let iat = now.timestamp() as usize;
+    let exp = (now + chrono::Duration::minutes(60)).timestamp() as usize;
+    let claims: TokenClaims = TokenClaims {
+        sub: user.id.to_string(),
+        exp,
+        iat,
+    };
 
-    Ok(Json(user_response))
+    let token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(data.env.jwt_secret.as_ref()),
+    )
+        .unwrap();
+
+    let cookie = Cookie::build(("token", token.to_owned()))
+        .path("/")
+        .max_age(time::Duration::hours(1))
+        .same_site(SameSite::None)
+        .secure(false)
+        .http_only(true)
+        .build();
+
+    let json_response = json!({
+        "status": "success",
+        "data": {
+            "user": filter_user_record(&user),
+            "token": token
+        }
+    });
+
+    let mut response = Response::new(json_response.to_string());
+
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        cookie.to_string().parse().unwrap()
+    );
+
+    response.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_CREDENTIALS,
+        "true".parse().unwrap()
+    );
+
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        "application/json".parse().unwrap()
+    );
+
+    Ok(response)
 }
+
 
 pub async fn login_user_handler(
     State(data): State<Arc<AppState>>,
@@ -153,6 +199,7 @@ pub async fn login_user_handler(
         .path("/")
         .max_age(time::Duration::hours(1))
         .same_site(SameSite::Lax)
+        .domain("localhost")
         .http_only(true);
 
     let mut response = Response::new(json!({"status": "success", "token": token}).to_string());
@@ -167,6 +214,7 @@ pub async fn logout_handler() -> Result<impl IntoResponse, (StatusCode, Json<ser
         .path("/")
         .max_age(time::Duration::hours(-1))
         .same_site(SameSite::Lax)
+        .domain("localhost")
         .http_only(true);
 
     let mut response = Response::new(json!({"status": "success"}).to_string());
